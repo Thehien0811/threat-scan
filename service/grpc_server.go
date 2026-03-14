@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
-	pb "github.com/threat-scan/pb/scan"
+	pb "github.com/threat-scan/proto"
 	"google.golang.org/grpc"
 )
 

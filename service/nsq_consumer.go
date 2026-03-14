@@ -88,7 +88,7 @@ func (nc *NSQConsumer) HandleMessage(msg *nsq.Message) error {
 
 	// Validate file
 	if err := ValidateFile(fullPath, 100*1024*1024); err != nil {
-		ncresultMsg := ScanResultMessage{
+		resultMsg := ScanResultMessage{
 			ID:        scanMsg.ID,
 			SHA256:    scanMsg.SHA256,
 			FilePath:  scanMsg.FilePath,
