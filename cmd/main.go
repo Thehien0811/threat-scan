@@ -1,15 +1,14 @@
 package main
 
 import (
-	"context"
 	"flag"
 	"log"
 	"os"
 	"os/signal"
 	"sync"
 	"syscall"
-	"time"
 
+	nsq "github.com/nsqio/go-nsq"
 	"github.com/threat-scan/service"
 	"gopkg.in/yaml.v3"
 )
@@ -26,21 +25,6 @@ type ConfigFile struct {
 		Channel       string   `yaml:"channel"`
 		MaxInFlight   int      `yaml:"max_in_flight"`
 	} `yaml:"nsq"`
-
-	AVEngines struct {
-		ClamAV struct {
-			Enabled bool          `yaml:"enabled"`
-			Host    string        `yaml:"host"`
-			Port    int           `yaml:"port"`
-			Timeout time.Duration `yaml:"timeout"`
-		} `yaml:"clamav"`
-		Comodo struct {
-			Enabled bool          `yaml:"enabled"`
-			Host    string        `yaml:"host"`
-			Port    int           `yaml:"port"`
-			Timeout time.Duration `yaml:"timeout"`
-		} `yaml:"comodo"`
-	} `yaml:"av_engines"`
 
 	Scanning struct {
 		UploadPath  string `yaml:"upload_path"`
@@ -64,59 +48,21 @@ func main() {
 		log.Fatalf("Failed to load config: %v", err)
 	}
 
-	// Create multi-scanner
-	scanner := service.NewMultiScanner()
-
-	// Register ClamAV scanner
-	if config.AVEngines.ClamAV.Enabled {
-		clamav := service.NewClamAVScanner(
-			config.AVEngines.ClamAV.Host,
-			config.AVEngines.ClamAV.Port,
-			config.AVEngines.ClamAV.Timeout,
-		)
-		scanner.RegisterScanner("clamav", clamav)
-		log.Println("ClamAV scanner registered")
+	// Create NSQ producer
+	producer, err := nsq.NewProducer(config.NSQ.NSQDAddresses[0], nsq.NewConfig())
+	if err != nil {
+		log.Fatalf("Failed to create NSQ producer: %v", err)
 	}
+	defer producer.Stop()
 
-	// TODO: Register Comodo scanner when implemented
-	// if config.AVEngines.Comodo.Enabled {
-	//     comodo := service.NewComodoScanner(...)
-	//     scanner.RegisterScanner("comodo", comodo)
-	// }
+	log.Printf("Connected to NSQ at %s", config.NSQ.NSQDAddresses[0])
 
-	// Check scanner health
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	health := scanner.CheckHealth(ctx)
-	cancel()
-
-	for name, err := range health {
-		if err != nil {
-			log.Printf("Warning: %s health check failed: %v", name, err)
-		} else {
-			log.Printf("%s is healthy", name)
-		}
-	}
-
-	// Create gRPC server
+	// Create gRPC server with NSQ producer
 	grpcServer := service.NewGRPCServer(
-		scanner,
+		producer,
 		config.Scanning.UploadPath,
 		config.Server.MaxConcurrentScans,
 	)
-
-	// Create NSQ consumer
-	nsqConsumer, err := service.NewNSQConsumer(
-		config.NSQ.NSQDAddresses,
-		config.NSQ.Topic,
-		config.NSQ.Channel,
-		scanner,
-		config.Scanning.UploadPath,
-	)
-	if err != nil {
-		log.Fatalf("Failed to create NSQ consumer: %v", err)
-	}
-	defer nsqConsumer.Close()
-	log.Println("NSQ consumer started")
 
 	// Start gRPC server in goroutine
 	var wg sync.WaitGroup
@@ -134,13 +80,12 @@ func main() {
 
 	log.Println("Threat-scan service started successfully")
 	log.Printf("gRPC server listening on %s", config.Server.GRPCPort)
-	log.Printf("NSQ topic: %s, channel: %s", config.NSQ.Topic, config.NSQ.Channel)
+	log.Printf("Publishing scan requests to NSQ topic: %s", config.NSQ.Topic)
 
 	// Wait for signal or error
 	select {
 	case sig := <-sigChan:
 		log.Printf("Received signal: %v, shutting down...", sig)
-		nsqConsumer.Close()
 	case err := <-func() <-chan error {
 		ch := make(chan error)
 		go func() { ch <- serverErr }()

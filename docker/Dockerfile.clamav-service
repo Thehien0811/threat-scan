@@ -1,0 +1,58 @@
+# Build ClamAV service
+FROM golang:1.24-alpine AS builder
+
+WORKDIR /build
+
+# Install dependencies
+RUN apk add --no-cache git protobuf-dev
+
+# Copy go mod files
+COPY go.mod go.sum ./
+
+# Download dependencies
+RUN go mod download
+
+# Copy source code
+COPY . .
+
+# Generate protobuf code (if needed)
+RUN go install google.golang.org/protobuf/cmd/protoc-gen-go@latest && \
+    go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+
+# Build the clamav service
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo \
+    -o /app/clamav-service ./cmd/clamav-service
+
+# Runtime image with ClamAV
+FROM alpine:latest
+
+RUN apk add --no-cache ca-certificates clamav clamav-daemon freshclam && \
+    mkdir -p /var/log/clamav && \
+    mkdir -p /var/lib/clamav && \
+    chown -R clamav:clamav /var/log/clamav /var/lib/clamav
+
+WORKDIR /app
+
+# Copy binary from builder
+COPY --from=builder /app/clamav-service .
+
+# Copy config
+COPY config/config.yaml /etc/threat-scan/
+
+# Create uploads directory
+RUN mkdir -p /uploads && chmod 755 /uploads
+
+# Create entrypoint script to update definitions and start service
+RUN echo '#!/bin/sh' > /app/entrypoint.sh && \
+    echo 'set -e' >> /app/entrypoint.sh && \
+    echo '# Update virus definitions' >> /app/entrypoint.sh && \
+    echo 'freshclam || true' >> /app/entrypoint.sh && \
+    echo '# Start clamd daemon in background' >> /app/entrypoint.sh && \
+    echo 'clamd &' >> /app/entrypoint.sh && \
+    echo '# Wait for clamd to be ready' >> /app/entrypoint.sh && \
+    echo 'sleep 5' >> /app/entrypoint.sh && \
+    echo '# Start clamav service' >> /app/entrypoint.sh && \
+    echo 'exec ./clamav-service -config /etc/threat-scan/config.yaml' >> /app/entrypoint.sh && \
+    chmod +x /app/entrypoint.sh
+
+ENTRYPOINT ["/app/entrypoint.sh"]

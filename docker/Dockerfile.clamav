@@ -1,11 +1,11 @@
 # Use official ClamAV image as base
 FROM clamav/clamav:latest
 
-# Install additional utilities
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
+# # Install additional utilities
+# RUN apt-get update && \
+#     apt-get install -y --no-install-recommends \
+#     curl \
+#     && rm -rf /var/lib/apt/lists/*
 
 # Create uploads directory
 RUN mkdir -p /uploads && \

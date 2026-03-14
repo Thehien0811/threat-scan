@@ -9,18 +9,6 @@ nsq:
   channel: "scanner"
   max_in_flight: 100
 
-av_engines:
-  clamav:
-    enabled: true
-    host: "clamav"
-    port: 3310
-    timeout: 60
-  comodo:
-    enabled: true
-    host: "comodo"
-    port: 3310
-    timeout: 60
-
 scanning:
   upload_path: "/uploads"
   max_file_size: 104857600  # 100MB

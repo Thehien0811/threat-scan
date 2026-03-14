@@ -2,36 +2,45 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net"
 	"path/filepath"
-	"time"
 
+	nsq "github.com/nsqio/go-nsq"
 	pb "github.com/threat-scan/proto"
 	"google.golang.org/grpc"
 )
 
+// ScanRequestMessage for NSQ publishing
+type ScanRequestMessage struct {
+	SHA256   string `json:"sha256"`
+	FilePath string `json:"filepath"`
+	FileName string `json:"filename"`
+	ID       string `json:"id"`
+}
+
 // GRPCServer implements the ScanService gRPC interface
 type GRPCServer struct {
 	pb.UnimplementedScanServiceServer
-	scanner    *MultiScanner
+	producer   *nsq.Producer
 	uploadPath string
 	maxWorkers int
 	semaphore  chan struct{}
 }
 
-// NewGRPCServer creates a new gRPC server
-func NewGRPCServer(scanner *MultiScanner, uploadPath string, maxWorkers int) *GRPCServer {
+// NewGRPCServer creates a new gRPC server with NSQ producer
+func NewGRPCServer(producer *nsq.Producer, uploadPath string, maxWorkers int) *GRPCServer {
 	return &GRPCServer{
-		scanner:    scanner,
+		producer:   producer,
 		uploadPath: uploadPath,
 		maxWorkers: maxWorkers,
 		semaphore:  make(chan struct{}, maxWorkers),
 	}
 }
 
-// Scan implements the Scan RPC method
+// Scan implements the Scan RPC method - publishes to NSQ instead of scanning directly
 func (s *GRPCServer) Scan(ctx context.Context, req *pb.ScanRequest) (*pb.ScanResponse, error) {
 	log.Printf("Received scan request for file: %s (SHA256: %s)", req.Filename, req.Sha256)
 
@@ -69,43 +78,36 @@ func (s *GRPCServer) Scan(ctx context.Context, req *pb.ScanRequest) (*pb.ScanRes
 		}, nil
 	}
 
-	// Set scan timeout
-	scanCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
-	defer cancel()
+	// Create scan request message
+	scanMsg := ScanRequestMessage{
+		SHA256:   req.Sha256,
+		FilePath: req.Filepath,
+		FileName: req.Filename,
+		ID:       req.Sha256, // Use SHA256 as unique ID
+	}
 
-	// Perform scan
-	results, err := s.scanner.Scan(scanCtx, fullPath)
+	// Marshal to JSON
+	msgJSON, err := json.Marshal(scanMsg)
 	if err != nil {
 		return &pb.ScanResponse{
 			Status:       "error",
-			ErrorMessage: fmt.Sprintf("Scan failed: %v", err),
+			ErrorMessage: fmt.Sprintf("Failed to marshal message: %v", err),
 		}, nil
 	}
 
-	// Convert results
-	pbResults := make([]*pb.ScanResult, len(results))
-	overallStatus := "clean"
-
-	for i, result := range results {
-		pbResults[i] = &pb.ScanResult{
-			Engine:    result.Engine,
-			Status:    result.Status,
-			Detection: result.Detection,
-			Details:   result.Details,
-		}
-
-		if result.Status == "infected" {
-			overallStatus = "infected"
-		} else if result.Status == "error" && overallStatus == "clean" {
-			overallStatus = "error"
-		}
+	// Publish to NSQ
+	if err := s.producer.Publish("threat_scan", msgJSON); err != nil {
+		return &pb.ScanResponse{
+			Status:       "error",
+			ErrorMessage: fmt.Sprintf("Failed to publish scan request: %v", err),
+		}, nil
 	}
 
-	log.Printf("Scan completed for %s: %s", req.Filename, overallStatus)
+	log.Printf("Published scan request for %s to NSQ topic: threat_scan", req.Filename)
 
 	return &pb.ScanResponse{
-		Status:  overallStatus,
-		Results: pbResults,
+		Status:       "queued",
+		ErrorMessage: fmt.Sprintf("Scan request queued with ID: %s. Results will be published asynchronously.", req.Sha256),
 	}, nil
 }
 

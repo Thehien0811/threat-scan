@@ -1,168 +1,110 @@
 package service
 
 import (
-	"bufio"
 	"context"
 	"fmt"
-	"io"
-	"net"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 )
 
 // ClamAVScanner implements Scanner interface for ClamAV
 type ClamAVScanner struct {
-	host    string
-	port    int
 	timeout time.Duration
 }
 
 // NewClamAVScanner creates a new ClamAV scanner
 func NewClamAVScanner(host string, port int, timeout time.Duration) *ClamAVScanner {
 	return &ClamAVScanner{
-		host:    host,
-		port:    port,
 		timeout: timeout,
 	}
 }
 
-// Scan scans a file with ClamAV
+// Scan scans a file with ClamAV using clamdscan command
 func (c *ClamAVScanner) Scan(ctx context.Context, filePath string) (*ScanResult, error) {
-	// Create connection with timeout
-	conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:%d", c.host, c.port), c.timeout)
+	// Get absolute path
+	absPath, err := filepath.Abs(filePath)
 	if err != nil {
-		return nil, fmt.Errorf("clamav connection failed: %w", err)
-	}
-	defer conn.Close()
-
-	// Set read/write deadline
-	deadline := time.Now().Add(c.timeout)
-	conn.SetDeadline(deadline)
-
-	// Send INSTREAM command for file scanning
-	cmd := fmt.Sprintf("INSTREAM\n")
-	if _, err := conn.Write([]byte(cmd)); err != nil {
-		return nil, fmt.Errorf("clamav write command failed: %w", err)
+		return nil, fmt.Errorf("failed to get absolute path: %w", err)
 	}
 
-	// Read file and send in chunks
-	if err := sendFileContent(conn, filePath); err != nil {
-		return nil, fmt.Errorf("clamav file send failed: %w", err)
+	// Verify file exists
+	if _, err := os.Stat(absPath); err != nil {
+		return nil, fmt.Errorf("file not found: %w", err)
 	}
 
-	// Read response
-	scanner := bufio.NewScanner(conn)
-	if !scanner.Scan() {
-		return nil, fmt.Errorf("clamav no response")
-	}
-
-	response := scanner.Text()
-	return c.parseResponse(response), nil
-}
-
-// Health checks ClamAV connectivity
-func (c *ClamAVScanner) Health(ctx context.Context) error {
-	conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:%d", c.host, c.port), c.timeout)
-	if err != nil {
-		return fmt.Errorf("clamav health check failed: %w", err)
-	}
-	defer conn.Close()
-
-	conn.SetDeadline(time.Now().Add(c.timeout))
-
-	// Send PING command
-	if _, err := conn.Write([]byte("PING\n")); err != nil {
-		return fmt.Errorf("clamav ping failed: %w", err)
-	}
-
-	scanner := bufio.NewScanner(conn)
-	if !scanner.Scan() {
-		return fmt.Errorf("clamav ping no response")
-	}
-
-	if strings.Contains(scanner.Text(), "PONG") {
-		return nil
-	}
-
-	return fmt.Errorf("clamav unhealthy response")
-}
-
-// parseResponse parses ClamAV response
-func (c *ClamAVScanner) parseResponse(response string) *ScanResult {
 	result := &ScanResult{
 		Engine: "clamav",
-		Status: "clean",
 	}
 
-	// ClamAV response format: "stream: <status> <detection>"
-	// Clean: "stream: OK"
-	// Infected: "stream: Eicar-Test-File FOUND"
+	// Create context with timeout
+	scanCtx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
 
-	parts := strings.Split(response, ":")
-	if len(parts) < 2 {
-		result.Status = "error"
-		result.Details = "invalid response format"
-		return result
-	}
+	// Run clamdscan command with absolute path (requires clamd daemon)
+	cmd := exec.CommandContext(scanCtx, "clamdscan", "--no-summary", absPath)
+	output, err := cmd.CombinedOutput()
+	outputStr := string(output)
 
-	content := strings.TrimSpace(parts[1])
-
-	if strings.Contains(content, "FOUND") {
-		result.Status = "infected"
-		// Extract detection name
-		detectionParts := strings.Split(content, " ")
-		if len(detectionParts) > 0 {
-			result.Detection = detectionParts[0]
+	// Parse output
+	if err != nil {
+		// Check if it's a context timeout
+		if scanCtx.Err() == context.DeadlineExceeded {
+			result.Status = "error"
+			result.Details = "scan timeout"
+			return result, nil
 		}
-		result.Details = content
-	} else if strings.Contains(content, "OK") {
-		result.Status = "clean"
-	} else {
+
+		// Check for various error conditions
+		if strings.Contains(outputStr, "Can't access file") || strings.Contains(outputStr, "Permission denied") {
+			result.Status = "error"
+			result.Details = "file access error: " + outputStr
+			return result, nil
+		}
+
+		// Check if file is infected
+		if strings.Contains(outputStr, "FOUND") {
+			result.Status = "infected"
+			result.Details = outputStr
+			// Extract threat name
+			for _, line := range strings.Split(outputStr, "\n") {
+				if strings.Contains(line, "FOUND") {
+					// Format: /path/to/file: ThreatName FOUND
+					parts := strings.Split(line, ":")
+					if len(parts) >= 2 {
+						threatPart := strings.TrimSpace(parts[len(parts)-1])
+						threatName := strings.TrimSuffix(threatPart, " FOUND")
+						result.Detection = threatName
+					}
+					break
+				}
+			}
+			return result, nil
+		}
+
+		// Other errors
 		result.Status = "error"
-		result.Details = content
+		result.Details = fmt.Sprintf("scan failed: %v - %s", err, outputStr)
+		return result, nil
 	}
 
-	return result
+	// Success - file is clean
+	result.Status = "clean"
+	result.Details = "file is clean"
+	return result, nil
 }
 
-// sendFileContent sends file content to ClamAV in chunks
-func sendFileContent(conn net.Conn, filePath string) error {
-	file, err := os.Open(filePath)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
+// Health checks ClamAV daemon availability
+func (c *ClamAVScanner) Health(ctx context.Context) error {
+	scanCtx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
 
-	const chunkSize = 32768 // 32KB chunks
-	buffer := make([]byte, chunkSize)
-
-	for {
-		n, err := file.Read(buffer)
-		if err != nil && err != io.EOF {
-			return err
-		}
-
-		if n == 0 {
-			break
-		}
-
-		// Send chunk size (4 bytes big-endian)
-		size := uint32(n)
-		sizeBytes := []byte{byte(size >> 24), byte(size >> 16), byte(size >> 8), byte(size)}
-		if _, err := conn.Write(sizeBytes); err != nil {
-			return err
-		}
-
-		// Send chunk data
-		if _, err := conn.Write(buffer[:n]); err != nil {
-			return err
-		}
-	}
-
-	// Send terminating chunk (0 bytes)
-	if _, err := conn.Write([]byte{0, 0, 0, 0}); err != nil {
-		return err
+	// Check if clamdscan can connect to clamd
+	cmd := exec.CommandContext(scanCtx, "clamdscan", "--version")
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("clamav health check failed: %w", err)
 	}
 
 	return nil
