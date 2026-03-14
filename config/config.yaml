@@ -1,0 +1,31 @@
+server:
+  grpc_port: ":50051"
+  max_concurrent_scans: 10
+
+nsq:
+  nsqd_addresses:
+    - "nsqd:4150"
+  topic: "threat_scan"
+  channel: "scanner"
+  max_in_flight: 100
+
+av_engines:
+  clamav:
+    enabled: true
+    host: "clamav"
+    port: 3310
+    timeout: 60
+  comodo:
+    enabled: true
+    host: "comodo"
+    port: 3310
+    timeout: 60
+
+scanning:
+  upload_path: "/uploads"
+  max_file_size: 104857600  # 100MB
+  scan_timeout: 300         # 5 minutes
+
+logging:
+  level: "debug"
+  format: "json"

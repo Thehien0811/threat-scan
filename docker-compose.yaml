@@ -1,0 +1,112 @@
+version: '3.9'
+
+services:
+  # NSQ Lookupd
+  nsqlookupd:
+    image: nsqio/nsq:latest
+    container_name: nsqlookupd
+    command: /nsqlookupd
+    ports:
+      - "4160:4160"
+      - "4161:4161"
+    networks:
+      - threat-scan-net
+
+  # NSQd
+  nsqd:
+    image: nsqio/nsq:latest
+    container_name: nsqd
+    command: /nsqd --lookupd-tcp-address=nsqlookupd:4160
+    depends_on:
+      - nsqlookupd
+    ports:
+      - "4150:4150"
+      - "4151:4151"
+    volumes:
+      - nsqd-data:/data
+    networks:
+      - threat-scan-net
+    environment:
+      - NSQ_TOPIC=threat_scan
+
+  # NSQ Admin
+  nsqadmin:
+    image: nsqio/nsq:latest
+    container_name: nsqadmin
+    command: /nsqadmin --lookupd-http-address=nsqlookupd:4161
+    depends_on:
+      - nsqlookupd
+    ports:
+      - "4171:4171"
+    networks:
+      - threat-scan-net
+
+  # ClamAV
+  clamav:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.clamav
+    container_name: clamav
+    ports:
+      - "3310:3310"
+    volumes:
+      - uploads:/uploads
+      - clamav-db:/var/lib/clamav
+    healthcheck:
+      test: ["CMD", "clamdscan", "--version"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - threat-scan-net
+
+  # Comodo (optional - may require license)
+  # comodo:
+  #   build:
+  #     context: .
+  #     dockerfile: docker/Dockerfile.comodo
+  #   container_name: comodo
+  #   ports:
+  #     - "3310:3310"
+  #   volumes:
+  #     - uploads:/uploads
+  #   networks:
+  #     - threat-scan-net
+
+  # Threat-Scan Go Service
+  threat-scan-service:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.service
+    container_name: threat-scan-service
+    depends_on:
+      - nsqd
+      - clamav
+    ports:
+      - "50051:50051"
+    volumes:
+      - uploads:/uploads
+      - ./config/config.yaml:/etc/threat-scan/config.yaml:ro
+    environment:
+      - LOG_LEVEL=debug
+      - NSQ_LOOKUPD=nsqlookupd:4161
+    networks:
+      - threat-scan-net
+    healthcheck:
+      test: ["CMD", "grpcurl", "-plaintext", "localhost:50051", "list"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  uploads:
+    driver: local
+  clamav-db:
+    driver: local
+  nsqd-data:
+    driver: local
+
+networks:
+  threat-scan-net:
+    driver: bridge

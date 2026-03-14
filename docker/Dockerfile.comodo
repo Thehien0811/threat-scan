@@ -1,0 +1,22 @@
+# Use Alpine Linux as base
+FROM alpine:latest
+
+# Install Comodo antivirus dependencies and utilities
+RUN apk add --no-cache \
+    curl \
+    wget \
+    ca-certificates \
+    libc6-compat \
+    && \
+    apk add --no-cache -X http://dl-cdn.alpinelinux.org/alpine/edge/community \
+    comodo-antivirus
+
+# Create uploads directory
+RUN mkdir -p /uploads && \
+    chmod 755 /uploads
+
+# Expose comodo socket port (would need to be configured)
+EXPOSE 3310/tcp
+
+# Start Comodo service
+CMD ["cmdagent", "-daemon"]

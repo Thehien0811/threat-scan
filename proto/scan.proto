@@ -1,0 +1,32 @@
+syntax = "proto3";
+
+package scan;
+
+option go_package = "github.com/threat-scan/pb/scan";
+
+// ScanService provides threat scanning functionality
+service ScanService {
+  rpc Scan(ScanRequest) returns (ScanResponse);
+}
+
+// ScanRequest contains file information for scanning
+message ScanRequest {
+  string sha256 = 1;      // SHA256 hash of the file
+  string filepath = 2;    // Path to the file (relative to mounted volume)
+  string filename = 3;    // Original filename
+}
+
+// ScanResponse returns scan results
+message ScanResponse {
+  string status = 1;      // "clean", "infected", "error"
+  repeated ScanResult results = 2;
+  string error_message = 3;
+}
+
+// ScanResult contains results from individual AV engines
+message ScanResult {
+  string engine = 1;      // "clamav", "comodo"
+  string status = 2;      // "clean", "infected"
+  string detection = 3;   // Malware name if detected
+  string details = 4;     // Additional details
+}

@@ -1,0 +1,21 @@
+# Use official ClamAV image as base
+FROM clamav/clamav:latest
+
+# Install additional utilities
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create uploads directory
+RUN mkdir -p /uploads && \
+    chmod 755 /uploads
+
+# Expose clamd socket port
+EXPOSE 3310/tcp
+
+# Update virus definitions on startup
+RUN freshclam
+
+# Start ClamAV daemon
+CMD ["clamd"]
