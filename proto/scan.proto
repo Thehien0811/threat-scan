@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package scan;
 
-option go_package = "github.com/threat-scan/pb/scan";
+option go_package = ".;scanpb";
 
 // ScanService provides threat scanning functionality
 service ScanService {
