@@ -60,6 +60,7 @@ func main() {
 	// Create gRPC server with NSQ producer
 	grpcServer := service.NewGRPCServer(
 		producer,
+		config.NSQ.NSQDAddresses[0],
 		config.Scanning.UploadPath,
 		config.Server.MaxConcurrentScans,
 	)

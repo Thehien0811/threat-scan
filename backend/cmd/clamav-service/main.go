@@ -58,7 +58,7 @@ type ScanResultMessage struct {
 	FilePath  string               `json:"filepath"`
 	FileName  string               `json:"filename"`
 	Status    string               `json:"status"`
-	Results   []service.ScanResult `json:"results"`
+	Results   []*service.ScanResult `json:"results"`
 	Error     string               `json:"error,omitempty"`
 	Timestamp int64                `json:"timestamp"`
 }
@@ -171,19 +171,19 @@ func (h *ClamAVHandler) HandleMessage(msg *nsq.Message) error {
 		resultMsg.Error = err.Error()
 		log.Printf("Scan error for %s: %v", scanMsg.FileName, err)
 	} else {
-		resultMsg.Results = []service.ScanResult{*result}
+		resultMsg.Results = []*service.ScanResult{result}
 		resultMsg.Status = result.Status
 		log.Printf("Scan completed for %s: %s", scanMsg.FileName, result.Status)
 	}
 
-	// Publish result
+	// Publish result to the correct topic and format for gRPC consumer
 	resultJSON, err := json.Marshal(resultMsg)
 	if err != nil {
 		log.Printf("Failed to marshal result: %v", err)
 		return err
 	}
 
-	if err := h.producer.Publish("scan-results", resultJSON); err != nil {
+	if err := h.producer.Publish("threat_scan_results", resultJSON); err != nil {
 		log.Printf("Failed to publish scan result: %v", err)
 		return err
 	}

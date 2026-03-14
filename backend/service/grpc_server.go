@@ -24,20 +24,34 @@ type ScanRequestMessage struct {
 // GRPCServer implements the ScanService gRPC interface
 type GRPCServer struct {
 	pb.UnimplementedScanServiceServer
-	producer   *nsq.Producer
-	uploadPath string
-	maxWorkers int
-	semaphore  chan struct{}
+	producer       *nsq.Producer
+	resultConsumer *nsq.Consumer
+	uploadPath     string
+	maxWorkers     int
+	semaphore      chan struct{}
+	resultChans    map[string]chan *pb.ScanResponse
 }
 
 // NewGRPCServer creates a new gRPC server with NSQ producer
-func NewGRPCServer(producer *nsq.Producer, uploadPath string, maxWorkers int) *GRPCServer {
-	return &GRPCServer{
-		producer:   producer,
-		uploadPath: uploadPath,
-		maxWorkers: maxWorkers,
-		semaphore:  make(chan struct{}, maxWorkers),
+func NewGRPCServer(producer *nsq.Producer, nsqdAddr, uploadPath string, maxWorkers int) *GRPCServer {
+	config := nsq.NewConfig()
+	consumer, err := nsq.NewConsumer("threat_scan_results", "grpc_server", config)
+	if err != nil {
+		log.Fatalf("Failed to create NSQ consumer: %v", err)
 	}
+	server := &GRPCServer{
+		producer:       producer,
+		resultConsumer: consumer,
+		uploadPath:     uploadPath,
+		maxWorkers:     maxWorkers,
+		semaphore:      make(chan struct{}, maxWorkers),
+		resultChans:    make(map[string]chan *pb.ScanResponse),
+	}
+	consumer.AddHandler(nsq.HandlerFunc(server.handleResultMessage))
+	if err := consumer.ConnectToNSQD(nsqdAddr); err != nil {
+		log.Fatalf("Failed to connect result consumer to NSQD: %v", err)
+	}
+	return server
 }
 
 // Scan implements the Scan RPC method - publishes to NSQ instead of scanning directly
@@ -95,6 +109,11 @@ func (s *GRPCServer) Scan(ctx context.Context, req *pb.ScanRequest) (*pb.ScanRes
 		}, nil
 	}
 
+	// Prepare to receive result
+	resultChan := make(chan *pb.ScanResponse, 1)
+	s.resultChans[req.Sha256] = resultChan
+	defer delete(s.resultChans, req.Sha256)
+
 	// Publish to NSQ
 	if err := s.producer.Publish("threat_scan", msgJSON); err != nil {
 		return &pb.ScanResponse{
@@ -102,13 +121,41 @@ func (s *GRPCServer) Scan(ctx context.Context, req *pb.ScanRequest) (*pb.ScanRes
 			ErrorMessage: fmt.Sprintf("Failed to publish scan request: %v", err),
 		}, nil
 	}
-
 	log.Printf("Published scan request for %s to NSQ topic: threat_scan", req.Filename)
 
-	return &pb.ScanResponse{
-		Status:       "queued",
-		ErrorMessage: fmt.Sprintf("Scan request queued with ID: %s. Results will be published asynchronously.", req.Sha256),
-	}, nil
+	// Wait for result or context timeout
+	select {
+	case res := <-resultChan:
+		return res, nil
+	case <-ctx.Done():
+		return &pb.ScanResponse{
+			Status:       "error",
+			ErrorMessage: "Timed out waiting for scan result",
+		}, nil
+	}
+}
+
+// handleResultMessage handles incoming scan results from NSQ
+func (s *GRPCServer) handleResultMessage(msg *nsq.Message) error {
+	var resultMsg struct {
+		ID      string           `json:"id"`
+		Status  string           `json:"status"`
+		Results []*pb.ScanResult `json:"results"`
+		Error   string           `json:"error"`
+	}
+	if err := json.Unmarshal(msg.Body, &resultMsg); err != nil {
+		log.Printf("Failed to unmarshal scan result: %v", err)
+		return err
+	}
+	ch, ok := s.resultChans[resultMsg.ID]
+	if ok {
+		ch <- &pb.ScanResponse{
+			Status:       resultMsg.Status,
+			Results:      resultMsg.Results,
+			ErrorMessage: resultMsg.Error,
+		}
+	}
+	return nil
 }
 
 // StartGRPCServer starts the gRPC server

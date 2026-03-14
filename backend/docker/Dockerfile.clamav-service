@@ -29,7 +29,8 @@ FROM alpine:latest
 RUN apk add --no-cache ca-certificates clamav clamav-daemon freshclam && \
     mkdir -p /var/log/clamav && \
     mkdir -p /var/lib/clamav && \
-    chown -R clamav:clamav /var/log/clamav /var/lib/clamav
+    mkdir -p /run/clamav && \
+    chown -R clamav:clamav /var/log/clamav /var/lib/clamav /run/clamav
 
 WORKDIR /app
 

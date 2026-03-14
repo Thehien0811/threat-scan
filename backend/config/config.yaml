@@ -17,3 +17,10 @@ scanning:
 logging:
   level: "debug"
   format: "json"
+
+# Antivirus engines configuration
+av_engines:
+  clamav:
+    host: "localhost"
+    port: 3310
+    timeout: "60s"

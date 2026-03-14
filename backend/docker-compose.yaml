@@ -88,6 +88,28 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+      
+  gateway-service:
+    build:
+      context: ./gateway-service
+      dockerfile: Dockerfile
+    container_name: gateway-service
+    ports:
+      - "4000:4000"
+    volumes:
+      - uploads:/uploads
+    networks:
+      - threat-scan-net
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: frontend
+    ports:
+      - "3000:3000"
+    networks:
+      - threat-scan-net
 
 volumes:
   uploads:

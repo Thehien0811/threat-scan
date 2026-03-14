@@ -50,6 +50,7 @@ func (c *ClamAVScanner) Scan(ctx context.Context, filePath string) (*ScanResult,
 
 	// Parse output
 	if err != nil {
+		fmt.Println(err)
 		// Check if it's a context timeout
 		if scanCtx.Err() == context.DeadlineExceeded {
 			result.Status = "error"
