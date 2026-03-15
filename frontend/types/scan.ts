@@ -56,6 +56,7 @@ export interface ScanResponse {
   sha256?: string
   results?: ScanResult[]
   error_message?: string
+  engine: string
 }
 
 /**
