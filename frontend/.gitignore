@@ -1,0 +1,13 @@
+.gitignore file contents
+node_modules/
+.next/
+out/
+build/
+dist/
+*.log
+.env
+.env.local
+.env.*.local
+.vscode/
+.idea/
+.DS_Store

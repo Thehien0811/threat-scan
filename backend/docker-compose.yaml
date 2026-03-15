@@ -50,7 +50,7 @@ services:
     depends_on:
       - nsqd
     volumes:
-      - uploads:/uploads
+      - /var/file-storage:/uploads
       - clamav-db:/var/lib/clamav
     environment:
       - LOG_LEVEL=debug
@@ -91,23 +91,13 @@ services:
       
   gateway-service:
     build:
-      context: ./gateway-service
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: docker/Dockerfile.gateway
     container_name: gateway-service
     ports:
       - "4000:4000"
     volumes:
-      - uploads:/uploads
-    networks:
-      - threat-scan-net
-
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    container_name: frontend
-    ports:
-      - "3000:3000"
+      - /var/file-storage:/var/file-storage
     networks:
       - threat-scan-net
 
