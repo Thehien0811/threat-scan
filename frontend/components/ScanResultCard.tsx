@@ -3,7 +3,7 @@
 import { ShieldCheck, AlertTriangle, Copy, Check } from 'lucide-react'
 import { useState } from 'react'
 import { ScanResponse, ScanResult } from '@/types/scan'
-import { cn, getStatusColor, getStatusLabel } from '@/lib/utils'
+import { cn, getStatusLabel } from '@/lib/utils'
 
 export default function ScanResultCard({ result }: { result: ScanResponse }) {
   const [copied, setCopied] = useState(false)
@@ -14,9 +14,9 @@ export default function ScanResultCard({ result }: { result: ScanResponse }) {
     setTimeout(() => setCopied(false), 2000)
   }
 
-  const statusColor = result.status === 'clean' ? 'text-safe' : 'text-infected'
-  const statusBgColor = result.status === 'clean' ? 'bg-safe/20' : 'bg-infected/20'
-  const statusIcon = result.status === 'clean' ? ShieldCheck : AlertTriangle
+  const statusColor = result.status === 'safe' ? 'text-safe' : 'text-infected'
+  const statusBgColor = result.status === 'safe' ? 'bg-safe/20' : 'bg-infected/20'
+  const statusIcon = result.status === 'safe' ? ShieldCheck : AlertTriangle
 
   const StatusIcon = statusIcon
 
@@ -85,12 +85,12 @@ export default function ScanResultCard({ result }: { result: ScanResponse }) {
                 <div
                   className={cn(
                     'px-2 py-1 rounded text-xs font-semibold',
-                    res.status === 'clean'
+                    res.status === 'safe'
                       ? 'bg-safe/20 text-safe'
                       : 'bg-infected/20 text-infected'
                   )}
                 >
-                  {res.status === 'clean' ? '✓ Clean' : '⚠ Infected'}
+                  {res.status === 'safe' ? '✓ Safe' : '⚠ Infected'}
                 </div>
               </div>
             ))}

@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { Loader2, ShieldCheck, AlertTriangle, Calendar } from 'lucide-react'
 import { ScanHistoryItem } from '@/types/scan'
-import { cn, getStatusColor } from '@/lib/utils'
+import { cn } from '@/lib/utils'
 import axios from 'axios'
 
 export default function ScanHistoryTable() {
@@ -79,7 +79,7 @@ export default function ScanHistoryTable() {
               <tr key={idx} className="hover:bg-slate-900/30 transition">
                 <td className="px-6 py-4">
                   <div className="flex items-center gap-2">
-                    {item.status === 'clean' ? (
+                    {item.status === 'safe' ? (
                       <ShieldCheck className="w-4 h-4 text-safe" />
                     ) : (
                       <AlertTriangle className="w-4 h-4 text-infected" />
@@ -87,14 +87,14 @@ export default function ScanHistoryTable() {
                     <span
                       className={cn(
                         'px-2 py-1 rounded text-xs font-semibold',
-                        item.status === 'clean'
+                        item.status === 'safe'
                           ? 'bg-safe/20 text-safe'
                           : item.status === 'infected'
                           ? 'bg-infected/20 text-infected'
                           : 'bg-slate-700/50 text-slate-300'
                       )}
                     >
-                      {item.status === 'clean' ? '✓ Safe' : item.status === 'infected' ? '⚠ Infected' : '? Unknown'}
+                      {item.status === 'safe' ? '✓ Safe' : item.status === 'infected' ? '⚠ Infected' : '? Unknown'}
                     </span>
                   </div>
                 </td>
@@ -105,7 +105,7 @@ export default function ScanHistoryTable() {
                   {item.sha256}
                 </td>
                 <td className="px-6 py-4 text-sm text-slate-400">
-                  {new Date(item.timestamp * 1000).toLocaleString()}
+                  {new Date(item.scannedAt).toLocaleString()}
                 </td>
               </tr>
             ))}

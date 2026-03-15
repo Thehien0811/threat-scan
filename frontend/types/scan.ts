@@ -28,3 +28,49 @@ export interface UploadedFile {
   phase: "idle" | "signature" | "heuristic" | "behavioral" | "complete";
   result?: ScanResult;
 }
+
+export interface ScanHistoryItem {
+  id: string;
+  filename: string;
+  fileType: string;
+  fileSize: number;
+  sha256: string;
+  status: ScanStatus;
+  threats: ThreatDetail[];
+  engineHits: number;
+  totalEngines: number;
+  scanDuration: number;
+  scannedAt: Date;
+}
+
+export interface ScanResult {
+  engine: string
+  status: ScanStatus
+  details?: string
+}
+
+export interface ScanResponse {
+  status: ScanStatus
+  filename?: string
+  sha256?: string
+  results?: ScanResult[]
+  error_message?: string
+}
+
+/**
+ * Return color class for scan status
+ */
+export function getStatusColor(status: ScanStatus): string {
+  switch (status) {
+    case "safe":
+      return "text-green-600";
+    case "infected":
+      return "text-red-600";
+    case "warning":
+      return "text-yellow-600";
+    case "scanning":
+      return "text-blue-600";
+    default:
+      return "text-gray-600";
+  } 
+}
