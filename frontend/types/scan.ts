@@ -11,6 +11,7 @@ export interface ScanResult {
   filename: string;
   fileType: string;
   fileSize: number;
+  engine: string;
   sha256: string;
   status: ScanStatus;
   threats: ThreatDetail[];
