@@ -2,7 +2,7 @@
 
 import { ShieldCheck, AlertTriangle, Copy, Check } from 'lucide-react'
 import { useState } from 'react'
-import { ScanResponse, ScanResult } from '@/types/scan'
+import { ScanResponse, EngineScanResult } from '@/types/scan'
 import { cn, getStatusLabel } from '@/lib/utils'
 
 export default function ScanResultCard({ result }: { result: ScanResponse }) {
@@ -14,20 +14,24 @@ export default function ScanResultCard({ result }: { result: ScanResponse }) {
     setTimeout(() => setCopied(false), 2000)
   }
 
-  const statusColor = result.status === 'safe' ? 'text-safe' : 'text-infected'
-  const statusBgColor = result.status === 'safe' ? 'bg-safe/20' : 'bg-infected/20'
-  const statusIcon = result.status === 'safe' ? ShieldCheck : AlertTriangle
+  const statusColor =
+    result.status === 'safe' ? 'text-safe' : 'text-infected'
 
-  const StatusIcon = statusIcon
+  const statusBgColor =
+    result.status === 'safe' ? 'bg-safe/20' : 'bg-infected/20'
+
+  const StatusIcon =
+    result.status === 'safe' ? ShieldCheck : AlertTriangle
 
   return (
     <div className="bg-gradient-to-br from-cyber-card to-slate-900 border border-slate-600 rounded-lg p-6 space-y-6">
-      {/* Header with Status */}
+      {/* Header */}
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-4 flex-1">
           <div className={cn('p-3 rounded-lg', statusBgColor)}>
             <StatusIcon className={cn('w-6 h-6', statusColor)} />
           </div>
+
           <div className="flex-1">
             <p className="text-sm text-slate-400">Scan Result</p>
             <h3 className={cn('text-2xl font-bold', statusColor)}>
@@ -49,12 +53,14 @@ export default function ScanResultCard({ result }: { result: ScanResponse }) {
         {result.sha256 && (
           <div>
             <p className="text-sm text-slate-400 mb-1">SHA256</p>
+
             <div className="flex items-center justify-between bg-slate-900/50 rounded px-3 py-2">
               <p className="font-mono text-xs text-slate-300 truncate">
                 {result.sha256}
               </p>
+
               <button
-                onClick={() => copyToClipboard(result.sha256 || '')}
+                onClick={() => copyToClipboard(result.sha256!)}
                 className="ml-2 p-1.5 hover:bg-slate-800 rounded transition"
               >
                 {copied ? (
@@ -68,20 +74,27 @@ export default function ScanResultCard({ result }: { result: ScanResponse }) {
         )}
       </div>
 
-      {/* Scan Results */}
+      {/* Engine Scan Results */}
       {result.results && result.results.length > 0 && (
         <div className="border-t border-slate-700 pt-4">
           <p className="text-sm text-slate-400 mb-3">Engine Results</p>
+
           <div className="space-y-2">
-            {result.results.map((res: ScanResult, idx: number) => (
+            {result.results.map((res: EngineScanResult, idx: number) => (
               <div
                 key={idx}
                 className="bg-slate-900/50 rounded px-3 py-2 flex items-center justify-between"
               >
                 <div>
-                  <p className="font-semibold capitalize">{res.engine}</p>
-                  <p className="text-xs text-slate-400">{res.details || 'No details'}</p>
+                  <p className="font-semibold capitalize">
+                    {res.engine}
+                  </p>
+
+                  <p className="text-xs text-slate-400">
+                    {res.details || 'No details'}
+                  </p>
                 </div>
+
                 <div
                   className={cn(
                     'px-2 py-1 rounded text-xs font-semibold',
@@ -98,11 +111,13 @@ export default function ScanResultCard({ result }: { result: ScanResponse }) {
         </div>
       )}
 
-      {/* Error Message */}
+      {/* Error */}
       {result.error_message && (
         <div className="bg-infected/20 border border-infected/50 rounded px-3 py-2">
           <p className="text-xs text-infected font-semibold mb-1">Error</p>
-          <p className="text-xs text-slate-300">{result.error_message}</p>
+          <p className="text-xs text-slate-300">
+            {result.error_message}
+          </p>
         </div>
       )}
     </div>
